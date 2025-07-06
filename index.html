@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelacak Portofolio Kripto Interaktif</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Earthy Neutral -->
+    <!-- Application Structure Plan: Desain aplikasi ini mengadopsi pendekatan dashboard dengan tiga bagian utama untuk alur kerja yang intuitif, menerjemahkan logika dari Google Sheet ke dalam pengalaman web yang dinamis. 1) Ringkasan Utama di bagian atas untuk metrik kunci. 2) Detail Portofolio dalam tabel interaktif di mana pengguna dapat langsung mengubah harga pasar untuk melihat dampak instan. 3) Tombol "Tambah Transaksi" yang membuka modal untuk entri data yang terfokus. Struktur ini dipilih karena memisahkan tampilan ringkasan (apa yang saya miliki?) dari aksi (menambah transaksi/memperbarui harga), yang merupakan alur kerja paling umum bagi seorang investor dan meningkatkan kegunaan dibandingkan dengan menavigasi antar sheet. -->
+    <!-- Visualization & Content Choices: 1) Ringkasan Utama (Teks Dinamis): Goal->Informasi Cepat. Method->Kartu HTML/Tailwind. Interaction->Pembaruan real-time saat data berubah. Justification->Menyajikan KPI terpenting secara langsung. 2) Alokasi Portofolio (Donut Chart): Goal->Memahami Proporsi. Method->Chart.js Canvas. Interaction->Chart digambar ulang saat nilai portofolio berubah. Justification->Visualisasi standar dan efektif untuk alokasi aset. 3) Detail Portofolio (Tabel Interaktif): Goal->Analisis Mendalam. Method->Tabel HTML dengan input number. Interaction->Mengubah input harga akan memicu kalkulasi ulang & pembaruan UI. Justification->Memberdayakan pengguna dengan kemampuan analisis "what-if" secara instan, sebuah peningkatan besar dari alur kerja manual di sheet. 4) Form Transaksi (Modal): Goal->Input Data. Method->Modal HTML. Interaction->Form submit memicu kalkulasi ulang & refresh UI. Justification->Menjaga dashboard utama tetap bersih. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8F7F4; }
+        .chart-container { position: relative; width: 100%; max-width: 380px; margin-left: auto; margin-right: auto; height: 320px; max-height: 400px; }
+        @media (max-width: 768px) { .chart-container { height: 280px; } }
+        .modal { transition: opacity 0.25s ease; }
+        .modal-content { transition: transform 0.25s ease; }
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type="number"] { -moz-appearance: textfield; }
+        .positive { color: #2A9D8F; }
+        .negative { color: #E76F51; }
+        .neutral { color: #3D405B; }
+    </style>
+</head>
+<body class="text-[#3D405B]">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-[#3D405B]">Pelacak Portofolio Kripto</h1>
+            <p class="mt-2 text-lg text-gray-600">Pantau investasi Anda secara dinamis dan interaktif.</p>
+        </header>
+
+        <main>
+            <!-- Bagian Ringkasan Utama -->
+            <section id="summary" class="mb-8">
+                <div class="text-center mb-6">
+                    <h2 class="text-2xl font-bold">Ringkasan Utama</h2>
+                    <p class="text-gray-500 mt-1">Gambaran umum nilai dan kinerja portofolio Anda saat ini.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-sm font-medium text-gray-500">Total Modal Investasi</h3>
+                        <p id="total-modal" class="text-2xl font-semibold mt-2">Rp 0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-sm font-medium text-gray-500">Nilai Portofolio Saat Ini</h3>
+                        <p id="current-value" class="text-2xl font-semibold mt-2">Rp 0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h3 class="text-sm font-medium text-gray-500">Total Profit / Loss</h3>
+                        <div class="flex items-center justify-center space-x-2 mt-2">
+                            <p id="total-pl-rp" class="text-2xl font-semibold">Rp 0</p>
+                            <span id="total-pl-percent" class="text-lg font-medium">(0.00%)</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bagian Portofolio dan Grafik -->
+            <section id="portfolio-details" class="mb-8">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                    
+                    <div class="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                        <div class="sm:flex sm:items-center sm:justify-between mb-4">
+                            <div>
+                                <h2 class="text-2xl font-bold">Detail Portofolio</h2>
+                                <p class="text-gray-500 mt-1">Rincian setiap aset yang Anda miliki. Anda bisa mengubah 'Harga Pasar' untuk melihat kalkulasi ulang secara instan.</p>
+                            </div>
+                            <button id="add-transaction-btn" class="mt-4 sm:mt-0 w-full sm:w-auto bg-[#3D405B] text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 transition-colors">
+                                Tambah Transaksi
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aset</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jumlah</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Harga Pasar (Rp)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai Pasar (Rp)</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">P/L (Rp)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="portfolio-table-body" class="bg-white divide-y divide-gray-200">
+                                    <tr id="empty-row">
+                                        <td colspan="5" class="px-6 py-10 text-center text-gray-500">Belum ada transaksi. Silakan tambahkan transaksi baru.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-md">
+                        <h2 class="text-2xl font-bold text-center">Alokasi Aset</h2>
+                        <p class="text-gray-500 mt-1 mb-4 text-center">Distribusi nilai portofolio Anda berdasarkan aset.</p>
+                        <div class="chart-container">
+                            <canvas id="allocation-chart"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal untuk Tambah Transaksi -->
+    <div id="transaction-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 opacity-0 pointer-events-none">
+        <div class="modal-content bg-white w-full max-w-md p-8 rounded-2xl shadow-2xl transform scale-95">
+            <h2 class="text-2xl font-bold mb-6">Tambah Transaksi Baru</h2>
+            <form id="transaction-form">
+                <div class="mb-4">
+                    <label for="asset-name" class="block text-sm font-medium mb-1">Nama Aset (e.g., BTC, ETH)</label>
+                    <input type="text" id="asset-name" placeholder="BTC" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]" required>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="transaction-type" class="block text-sm font-medium mb-1">Jenis</label>
+                        <select id="transaction-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]">
+                            <option value="buy">Beli</option>
+                            <option value="sell">Jual</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label for="transaction-date" class="block text-sm font-medium mb-1">Tanggal</label>
+                        <input type="date" id="transaction-date" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]" required>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="asset-quantity" class="block text-sm font-medium mb-1">Jumlah Aset</label>
+                    <input type="number" step="any" id="asset-quantity" placeholder="0.05" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]" required>
+                </div>
+                <div class="mb-4">
+                    <label for="asset-price" class="block text-sm font-medium mb-1">Harga per Aset (Rp)</label>
+                    <input type="number" step="any" id="asset-price" placeholder="1000000000" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]" required>
+                </div>
+                 <div class="mb-6">
+                    <label for="transaction-fee" class="block text-sm font-medium mb-1">Biaya (Rp) (Opsional)</label>
+                    <input type="number" step="any" id="transaction-fee" placeholder="1500" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3D405B]">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-btn" class="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors">Batal</button>
+                    <button type="submit" class="px-6 py-2 bg-[#3D405B] text-white font-semibold rounded-lg hover:bg-opacity-90 transition-colors">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const transactionModal = document.getElementById('transaction-modal');
+            const addTransactionBtn = document.getElementById('add-transaction-btn');
+            const cancelBtn = document.getElementById('cancel-btn');
+            const transactionForm = document.getElementById('transaction-form');
+            const portfolioTableBody = document.getElementById('portfolio-table-body');
+            const emptyRow = document.getElementById('empty-row');
+            
+            const totalModalEl = document.getElementById('total-modal');
+            const currentValueEl = document.getElementById('current-value');
+            const totalPlRpEl = document.getElementById('total-pl-rp');
+            const totalPlPercentEl = document.getElementById('total-pl-percent');
+            
+            const transactionDateInput = document.getElementById('transaction-date');
+            transactionDateInput.valueAsDate = new Date();
+
+            let transactions = JSON.parse(localStorage.getItem('cryptoTransactions')) || [];
+            let marketPrices = JSON.parse(localStorage.getItem('cryptoMarketPrices')) || {};
+
+            let allocationChart;
+
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
+            };
+
+            const toggleModal = (show) => {
+                if (show) {
+                    transactionModal.classList.remove('opacity-0', 'pointer-events-none');
+                    transactionModal.querySelector('.modal-content').classList.remove('scale-95');
+                } else {
+                    transactionModal.classList.add('opacity-0');
+                    transactionModal.querySelector('.modal-content').classList.add('scale-95');
+                    setTimeout(() => transactionModal.classList.add('pointer-events-none'), 250);
+                }
+            };
+            
+            addTransactionBtn.addEventListener('click', () => {
+                transactionForm.reset();
+                transactionDateInput.valueAsDate = new Date();
+                toggleModal(true)
+            });
+            cancelBtn.addEventListener('click', () => toggleModal(false));
+            transactionModal.addEventListener('click', (e) => {
+                if (e.target === transactionModal) toggleModal(false);
+            });
+
+            transactionForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const newTransaction = {
+                    id: Date.now(),
+                    asset: document.getElementById('asset-name').value.toUpperCase(),
+                    type: document.getElementById('transaction-type').value,
+                    date: document.getElementById('transaction-date').value,
+                    quantity: parseFloat(document.getElementById('asset-quantity').value),
+                    price: parseFloat(document.getElementById('asset-price').value),
+                    fee: parseFloat(document.getElementById('transaction-fee').value) || 0
+                };
+                transactions.push(newTransaction);
+                localStorage.setItem('cryptoTransactions', JSON.stringify(transactions));
+                updatePortfolio();
+                toggleModal(false);
+            });
+
+            const updatePortfolio = () => {
+                const portfolio = {};
+
+                transactions.forEach(tx => {
+                    if (!portfolio[tx.asset]) {
+                        portfolio[tx.asset] = {
+                            quantity: 0,
+                            totalCost: 0,
+                            transactions: 0
+                        };
+                    }
+
+                    if (tx.type === 'buy') {
+                        portfolio[tx.asset].quantity += tx.quantity;
+                        portfolio[tx.asset].totalCost += (tx.quantity * tx.price) + tx.fee;
+                    } else { // sell
+                        const avgBuyPrice = portfolio[tx.asset].totalCost / portfolio[tx.asset].quantity;
+                        portfolio[tx.asset].totalCost -= tx.quantity * avgBuyPrice;
+                        portfolio[tx.asset].quantity -= tx.quantity;
+                    }
+                });
+                
+                renderTable(portfolio);
+                updateSummary(portfolio);
+                updateChart(portfolio);
+            };
+
+            const renderTable = (portfolio) => {
+                portfolioTableBody.innerHTML = '';
+
+                if (Object.keys(portfolio).length === 0 || Object.values(portfolio).every(a => a.quantity <= 0.0000001)) {
+                     portfolioTableBody.appendChild(emptyRow);
+                     return;
+                }
+
+                Object.entries(portfolio).forEach(([asset, data]) => {
+                    if (data.quantity <= 0.0000001) return; // Skip assets that have been completely sold
+
+                    if (!marketPrices[asset]) {
+                        marketPrices[asset] = data.totalCost / data.quantity;
+                    }
+
+                    const avgBuyPrice = data.totalCost / data.quantity;
+                    const marketPrice = marketPrices[asset];
+                    const currentValue = data.quantity * marketPrice;
+                    const profitLoss = currentValue - data.totalCost;
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium">${asset}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm">${data.quantity.toFixed(6)}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <input type="number" step="any" value="${marketPrice}" data-asset="${asset}" class="market-price-input w-36 text-sm p-1 border rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#3D405B]">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium">${formatCurrency(currentValue)}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                             <div class="text-sm font-medium ${profitLoss >= 0 ? 'positive' : 'negative'}">${formatCurrency(profitLoss)}</div>
+                        </td>
+                    `;
+                    portfolioTableBody.appendChild(row);
+                });
+
+                document.querySelectorAll('.market-price-input').forEach(input => {
+                    input.addEventListener('input', (e) => {
+                        const asset = e.target.dataset.asset;
+                        const newPrice = parseFloat(e.target.value) || 0;
+                        marketPrices[asset] = newPrice;
+                        localStorage.setItem('cryptoMarketPrices', JSON.stringify(marketPrices));
+                        updatePortfolio();
+                    });
+                });
+            };
+
+            const updateSummary = (portfolio) => {
+                let totalModal = 0;
+                let totalCurrentValue = 0;
+                
+                Object.entries(portfolio).forEach(([asset, data]) => {
+                    if (data.quantity <= 0.0000001) return;
+                    totalModal += data.totalCost;
+                    totalCurrentValue += data.quantity * (marketPrices[asset] || 0);
+                });
+
+                const totalPL = totalCurrentValue - totalModal;
+                const totalPLPercent = totalModal > 0 ? (totalPL / totalModal) * 100 : 0;
+
+                totalModalEl.textContent = formatCurrency(totalModal);
+                currentValueEl.textContent = formatCurrency(totalCurrentValue);
+                totalPlRpEl.textContent = formatCurrency(totalPL);
+                totalPlPercentEl.textContent = `(${totalPLPercent.toFixed(2)}%)`;
+
+                [totalPlRpEl, totalPlPercentEl].forEach(el => {
+                    el.classList.remove('positive', 'negative', 'neutral');
+                    if (totalPL > 0) el.classList.add('positive');
+                    else if (totalPL < 0) el.classList.add('negative');
+                    else el.classList.add('neutral');
+                });
+            };
+
+            const updateChart = (portfolio) => {
+                const ctx = document.getElementById('allocation-chart').getContext('2d');
+                const labels = [];
+                const data = [];
+                
+                Object.entries(portfolio).forEach(([asset, assetData]) => {
+                    if (assetData.quantity > 0.0000001) {
+                        labels.push(asset);
+                        data.push(assetData.quantity * (marketPrices[asset] || 0));
+                    }
+                });
+
+                if (allocationChart) {
+                    allocationChart.destroy();
+                }
+                
+                allocationChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Alokasi Portofolio',
+                            data: data,
+                            backgroundColor: [
+                                '#F4A261', '#E76F51', '#2A9D8F', '#264653',
+                                '#E9C46A', '#F77F00', '#D62828', '#FCBF49'
+                            ],
+                            borderColor: '#F8F7F4',
+                            borderWidth: 4,
+                            hoverOffset: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '60%',
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12,
+                                    padding: 20
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed !== null) {
+                                            label += formatCurrency(context.parsed);
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+            
+            // Initial Load
+            updatePortfolio();
+        });
+    </script>
+
+</body>
+</html>
